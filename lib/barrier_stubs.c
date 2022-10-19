@@ -38,8 +38,8 @@ CAMLprim value caml_cstruct_unsafe_load_uint32(value vc, value vofs) {
   vbofs = Field(vc, 1);
   int ofs = Int_val(vofs);
   int bofs = Int_val(vbofs);
-  struct caml_ba_array *b = Bytes_val(vb);
-  uint32_t *data = ((uint32_t*) (b->data + bofs));
+  void *b = Bytes_val(vb);
+  uint32_t *data = ((uint32_t*) (b + bofs));
   CAMLreturn (Val_int(data[ofs / sizeof(uint32_t)]));
 }
 
@@ -50,8 +50,8 @@ CAMLprim value caml_cstruct_unsafe_save_uint32(value vc, value vofs, value x) {
   vbofs = Field(vc, 1);
   int ofs = Int_val(vofs);
   int bofs = Int_val(vbofs);
-  struct caml_ba_array *b = Bytes_val(vb);
-  uint32_t *data = ((uint32_t*) (b->data + bofs));
+  void *b = Bytes_val(vb);
+  uint32_t *data = ((uint32_t*) (b + bofs));
   data[ofs / sizeof(uint32_t)] = Int_val(x);
   CAMLreturn (Val_unit);
 }
