@@ -9,8 +9,6 @@ bug-reports: "https://github.com/mirage/shared-memory-ring/issues"
 depends: [
   "ocaml" {>= "4.08.0"}
   "dune"
-  "cstruct" {>= "6.0.0"}
-  "ppx_cstruct" {>= "3.2.0"}
   "mirage-profile"
   "ounit" {with-test}
 ]

@@ -19,15 +19,14 @@ open OUnit
 let ( |> ) a b = b a
 let id x = x
 
-let alloc_page () =
-	Bigarray.Array1.create Bigarray.char Bigarray.c_layout 4096
+let alloc_page () = Bytes.create 4096
 
 let length t = Cstruct.length t
 
 let compare_bufs a b =
-	assert_equal ~printer:string_of_int (Bigarray.Array1.dim a) (Bigarray.Array1.dim b);
-	for i = 0 to Bigarray.Array1.dim a - 1 do
-		let x = Bigarray.Array1.unsafe_get a i in
+	assert_equal ~printer:string_of_int (Bytes.length a) (Bigarray.Array1.dim b);
+	for i = 0 to Bytes.length a - 1 do
+		let x = Bytes.get a i in
 		let y = Bigarray.Array1.unsafe_get b i in
 		assert_equal ~printer:(fun c -> Printf.sprintf "%02x" (int_of_char c)) x y
 	done
@@ -41,8 +40,8 @@ let bigarray_to_string a =
 
 let with_xenstores f =
 	let b1 = alloc_page () in
-	let b2 = alloc_page () in
-	let a = Cstruct.of_bigarray b1 in
+	let b2 = Bigarray.Array1.create Bigarray.char Bigarray.c_layout 4096 in
+	let a = b1 in
 	let b = Old_ring.C_Xenstore.of_buf b2 in
 	Xenstore_ring.Ring.init a;
 	Old_ring.C_Xenstore.zero b;
@@ -74,16 +73,21 @@ let xenstore_hello () =
 			()
 		)
 
-[%%cstruct
-type ring = {
-	output: uint8_t [@len 1024];
-	input: uint8_t [@len 1024];
-	output_cons: uint32_t;
-	output_prod: uint32_t;
-	input_cons: uint32_t;
-	input_prod: uint32_t;
-} [@@little_endian]
-]
+(* Tests are not activated so far
+let _output_cons = 2048
+let _output_prod = _output_cons + 4
+let _input_cons  = _output_prod + 4
+let _input_prod  = _input_cons  + 4
+let get_ring_input b = Bytes.sub b 0 1024
+let get_ring_input_cons b = Bytes.get_int32_le b _input_cons
+let get_ring_input_prod b = Bytes.get_int32_le b _input_prod
+let set_ring_input_cons b v = Bytes.set_int32_le b _input_cons v
+let set_ring_input_prod b v = Bytes.set_int32_le b _input_prod v
+let get_ring_output b = Bytes.sub b 1024 1024
+let get_ring_output_cons b = Bytes.get_int32_le b _output_cons
+let get_ring_output_prod b = Bytes.get_int32_le b _output_prod
+let set_ring_output_cons b v = Bytes.set_int32_le b _output_cons v
+let set_ring_output_prod b v = Bytes.set_int32_le b _output_prod v
 
 let check_signed_unsigned_write () =
 	(* Check for errors performing comparison across int32 max_int *)
@@ -94,8 +98,8 @@ let check_signed_unsigned_write () =
 		(fun b1 b2 a b ->
 			set_ring_output_cons a ofs;
 			set_ring_output_prod a ofs;
-			set_ring_output_cons (Cstruct.of_bigarray b2) ofs;
-			set_ring_output_prod (Cstruct.of_bigarray b2) ofs;
+			set_ring_output_cons (Cstruct.to_bytes (Cstruct.of_bigarray b2)) ofs;
+			set_ring_output_prod (Cstruct.to_bytes (Cstruct.of_bigarray b2)) ofs;
 			let x = Xenstore_ring.Ring.Front.unsafe_write a msg' 0 (Bytes.length msg') in
 			let y = Old_ring.C_Xenstore.unsafe_write b msg (String.length msg) in
 			assert_equal ~printer:string_of_int x y;
@@ -110,18 +114,19 @@ let check_signed_unsigned_read () =
 		(fun b1 b2 a b ->
 			set_ring_output_cons a (Int32.(pred (pred max_int)));
 			set_ring_output_prod a (Int32.(succ (succ max_int)));
-			set_ring_output_cons (Cstruct.of_bigarray b2) (Int32.(pred (pred max_int)));
- 			set_ring_output_prod (Cstruct.of_bigarray b2) (Int32.(succ (succ max_int)));
+            set_ring_output_cons (Cstruct.to_bytes (Cstruct.of_bigarray b2)) (Int32.(pred (pred max_int)));
+            set_ring_output_prod (Cstruct.to_bytes (Cstruct.of_bigarray b2)) (Int32.(succ (succ max_int)));
 			let x' = Xenstore_ring.Ring.Back.unsafe_read a buf' 0 (Bytes.length buf') in
 			let y' = Old_ring.C_Xenstore.Back.unsafe_read b buf (String.length buf) in
 			assert_equal ~printer:string_of_int x' y';
 			compare_bufs b1 b2;
 		)
+*)
 
 let with_consoles f =
 	let b1 = alloc_page () in
-	let b2 = alloc_page () in
-	let a = Cstruct.of_bigarray b1 in
+	let b2 = Bigarray.Array1.create Bigarray.char Bigarray.c_layout 4096 in
+	let a = b1 in
 	let b = Old_ring.C_Console.of_buf b2 in
 	Console_ring.Ring.init a;
 	Old_ring.C_Console.zero b;
@@ -235,7 +240,7 @@ let _ =
 		"check_signed_unsigned_read" >:: check_signed_unsigned_read;
 		"check_signed_unsigned_write" >:: check_signed_unsigned_write;
 *)
-                "xenstore_hello" >:: xenstore_hello;
+        "xenstore_hello" >:: xenstore_hello;
 		"console_init" >:: console_init;
 		"console_hello" >:: console_hello;
 		"ocaml throughput_test1" >:: throughput_test ~use_ocaml:true ~read_chunk_size:1024 ~write_chunk_size:1024 ~verify:false;

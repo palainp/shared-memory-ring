@@ -48,7 +48,7 @@ caml_##xname##_ring_write(value v_ptr, value v_str, value v_len) \
 { \
    struct xtype *intf = (struct xtype *)Caml_ba_data_val(v_ptr);	\
    int sent = 0, len = Int_val(v_len); \
-   char *data = String_val(v_str); \
+   const char *data = String_val(v_str); \
    XENCONS_RING_IDX cons, prod; \
    cons = intf->xout##_cons; \
    prod = intf->xout##_prod; \

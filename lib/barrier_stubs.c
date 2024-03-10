@@ -20,7 +20,6 @@
 #include <caml/mlvalues.h>
 #include <caml/alloc.h>
 #include <caml/memory.h>
-#include <caml/bigarray.h>
 
 #include "barrier.h"
 
@@ -29,29 +28,4 @@ caml_memory_barrier()
 {
   xen_mb();
   return Val_unit;
-}
-
-CAMLprim value caml_cstruct_unsafe_load_uint32(value vc, value vofs) {
-  CAMLparam2(vc, vofs);
-  CAMLlocal2(vb, vbofs);
-  vb = Field(vc, 0);
-  vbofs = Field(vc, 1);
-  int ofs = Int_val(vofs);
-  int bofs = Int_val(vbofs);
-  struct caml_ba_array *b = Caml_ba_array_val(vb);
-  uint32_t *data = ((uint32_t*) (b->data + bofs));
-  CAMLreturn (Val_int(data[ofs / sizeof(uint32_t)]));
-}
-
-CAMLprim value caml_cstruct_unsafe_save_uint32(value vc, value vofs, value x) {
-  CAMLparam3(vc, vofs, x);
-  CAMLlocal2(vb, vbofs);
-  vb = Field(vc, 0);
-  vbofs = Field(vc, 1);
-  int ofs = Int_val(vofs);
-  int bofs = Int_val(vbofs);
-  struct caml_ba_array *b = Caml_ba_array_val(vb);
-  uint32_t *data = ((uint32_t*) (b->data + bofs));
-  data[ofs / sizeof(uint32_t)] = Int_val(x);
-  CAMLreturn (Val_unit);
 }

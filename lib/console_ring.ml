@@ -15,13 +15,12 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  *)
 
-[@@@warning "-32"]
-
 open Ring
 
 module Ring = struct
 	module Layout = struct
 		(* memory layout from the frontend's point of view *)
+(*
 		[%%cstruct
 		type ring = {
 			input: uint8_t [@len 1024];
@@ -34,19 +33,25 @@ module Ring = struct
 			*)
 		} [@@little_endian]
 		]
+*)
 		let _input_cons  = 3072
-                let _input_prod  = _input_cons + 4
-                let _output_cons = _input_prod + 4
-                let _output_prod = _output_cons  + 4
-                let get_ring_output_cons c = Int32.of_int (unsafe_load_uint32 c _output_cons)
-                let get_ring_output_prod c = Int32.of_int (unsafe_load_uint32 c _output_prod)
-                let get_ring_input_cons  c = Int32.of_int (unsafe_load_uint32 c _input_cons)
-                let get_ring_input_prod  c = Int32.of_int (unsafe_load_uint32 c _input_prod)
-                let set_ring_output_cons c x = unsafe_save_uint32 c _output_cons (Int32.to_int x)
-                let set_ring_output_prod c x = unsafe_save_uint32 c _output_prod (Int32.to_int x)
-                let set_ring_input_cons  c x = unsafe_save_uint32 c _input_cons (Int32.to_int x)
-                let set_ring_input_prod  c x = unsafe_save_uint32 c _input_prod (Int32.to_int x)
+        let _input_prod  = _input_cons + 4
+        let _output_cons = _input_prod + 4
+        let _output_prod = _output_cons  + 4
 
+		let get_ring_input_pos _ring = 0
+		let get_ring_input_length _ring = 1024
+        let get_ring_input_cons ring = Bytes.get_int32_le ring _input_cons
+        let get_ring_input_prod ring = Bytes.get_int32_le ring _input_prod
+        let set_ring_input_cons ring v = Bytes.set_int32_le ring _input_cons v
+        let set_ring_input_prod ring v = Bytes.set_int32_le ring _input_prod v
+
+		let get_ring_output_pos _ring = 1024
+		let get_ring_output_length _ring = 2048
+        let get_ring_output_cons ring = Bytes.get_int32_le ring _output_cons
+        let get_ring_output_prod ring = Bytes.get_int32_le ring _output_prod
+        let set_ring_output_cons ring v = Bytes.set_int32_le ring _output_cons v
+        let set_ring_output_prod ring v = Bytes.set_int32_le ring _output_prod v
 
 	end
 	let init = zero

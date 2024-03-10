@@ -15,21 +15,13 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  *)
 
-type buf = Cstruct.t
+type buf = Bytes.t
 
-let sub t off len = Cstruct.sub t off len
+let sub t off len = Bytes.sub t off len
 
-let length t = Cstruct.length t
+let length t = Bytes.length t
 
 external memory_barrier: unit -> unit = "caml_memory_barrier" [@@noalloc]
-
-(* [load_uint32 c byte_offset] returns an int containing the 32-bit
-   word found at [byte_offset] read with a single load instruction. *)
-external unsafe_load_uint32: Cstruct.t -> int -> int = "caml_cstruct_unsafe_load_uint32"
-
-(* [save_uint32 c byte_offset newval] writes a 32-bit word at
-   [byte_offset] using a single store instruction. *)
-external unsafe_save_uint32: Cstruct.t -> int -> int -> unit = "caml_cstruct_unsafe_save_uint32"
 
 module Rpc = struct
 
@@ -61,13 +53,13 @@ module Rpc = struct
 
   let initialise ring =
     (* initialise the *_event fields to 1, and the rest to 0 *)
-    unsafe_save_uint32 ring _req_prod  0;
-    unsafe_save_uint32 ring _req_event 1;
-    unsafe_save_uint32 ring _rsp_prod  0;
-    unsafe_save_uint32 ring _rsp_event 1;
+    Bytes.set_int32_le ring _req_prod  0l;
+    Bytes.set_int32_le ring _req_event 1l;
+    Bytes.set_int32_le ring _rsp_prod  0l;
+    Bytes.set_int32_le ring _rsp_event 1l;
 
   type sring = {
-    buf: Cstruct.t;         (* Overall I/O buffer *)
+    buf: Bytes.t;     (* Overall I/O buffer *)
     header_size: int; (* Header of shared ring variables, in bits *)
     idx_size: int;    (* Size in bits of an index slot *)
     nr_ents: int;     (* Number of index entries *)
@@ -92,30 +84,30 @@ module Rpc = struct
     Printf.sprintf "ring %s header_size = %d; index slot size = %d; number of entries = %d" t.name t.header_size t.idx_size t.nr_ents
 
   let sring_rsp_prod sring =
-    unsafe_load_uint32 sring.buf _rsp_prod
+    Int32.to_int (Bytes.get_int32_le sring.buf _rsp_prod)
   let sring_req_prod sring =
-    unsafe_load_uint32 sring.buf _req_prod
+    Int32.to_int (Bytes.get_int32_le sring.buf _req_prod)
   let sring_req_event sring =
     memory_barrier ();
-    unsafe_load_uint32 sring.buf _req_event
+    Int32.to_int (Bytes.get_int32_le sring.buf _req_event)
   let sring_rsp_event sring =
     memory_barrier ();
-    unsafe_load_uint32 sring.buf _rsp_event
+    Int32.to_int (Bytes.get_int32_le sring.buf _rsp_event)
 
   let sring_push_requests sring req_prod =
     memory_barrier (); (* ensure requests are seen before the index is updated *)
-    unsafe_save_uint32 sring.buf _req_prod req_prod
+    Bytes.set_int32_le sring.buf _req_prod req_prod
 
   let sring_push_responses sring rsp_prod =
     memory_barrier (); (* ensure requests are seen before the index is updated *)
-    unsafe_save_uint32 sring.buf _rsp_prod rsp_prod
+    Bytes.set_int32_le sring.buf _rsp_prod rsp_prod
 
   let sring_set_rsp_event sring rsp_event =
-    unsafe_save_uint32 sring.buf _rsp_event rsp_event;
+    Bytes.set_int32_le sring.buf _rsp_event rsp_event;
     memory_barrier ()
 
   let sring_set_req_event sring req_event =
-    unsafe_save_uint32 sring.buf _req_event req_event;
+    Bytes.set_int32_le sring.buf _req_event req_event;
     memory_barrier ()
 
   let _nr_ents sring = sring.nr_ents
@@ -152,7 +144,7 @@ module Rpc = struct
       ((sring_rsp_prod t.sring) - t.rsp_cons) > 0
 
     let push_requests t =
-      sring_push_requests t.sring t.req_prod_pvt
+      sring_push_requests t.sring (Int32.of_int t.req_prod_pvt)
 
     let push_requests_and_check_notify t =
       let old_idx = sring_req_prod t.sring in
@@ -164,7 +156,7 @@ module Rpc = struct
       if has_unconsumed_responses t then
         true
       else begin
-        sring_set_rsp_event t.sring (t.rsp_cons + 1);
+        sring_set_rsp_event t.sring (Int32.of_int(t.rsp_cons + 1));
         has_unconsumed_responses t
       end
 
@@ -224,7 +216,7 @@ module Rpc = struct
       if req < rsp then (req > 0) else (rsp > 0)
 
     let push_responses t =
-      sring_push_responses t.sring t.rsp_prod_pvt
+      sring_push_responses t.sring (Int32.of_int t.rsp_prod_pvt)
 
     let push_responses_and_check_notify t =
       let old_idx = sring_rsp_prod t.sring in
@@ -236,7 +228,7 @@ module Rpc = struct
       if has_unconsumed_requests t then
         true
       else begin
-        sring_set_req_event t.sring (t.req_cons + 1);
+        sring_set_req_event t.sring (Int32.of_int (t.req_cons + 1));
         has_unconsumed_requests t
       end
 
@@ -251,7 +243,7 @@ module Rpc = struct
     let final_check_for_requests t =
       has_unconsumed_requests t ||
       begin
-        sring_set_req_event t.sring (t.req_cons + 1);
+        sring_set_req_event t.sring (Int32.of_int (t.req_cons + 1));
         has_unconsumed_requests t
       end
 
@@ -283,27 +275,31 @@ end
 module type RW = sig
   (** A bi-directional pipe where 'input' and 'output' are from
       	    the frontend's (i.e. the guest's) point of view *)
-  val get_ring_input: Cstruct.t -> Cstruct.t
-  val get_ring_input_cons: Cstruct.t -> int32
-  val get_ring_input_prod: Cstruct.t -> int32
-  val set_ring_input_cons: Cstruct.t -> int32 -> unit
-  val set_ring_input_prod: Cstruct.t -> int32 -> unit
+  val get_ring_input_pos: Bytes.t -> int
+  val get_ring_input_length: Bytes.t -> int
+  val get_ring_input_cons: Bytes.t -> int32
+  val get_ring_input_prod: Bytes.t -> int32
+  val set_ring_input_cons: Bytes.t -> int32 -> unit
+  val set_ring_input_prod: Bytes.t -> int32 -> unit
 
-  val get_ring_output: Cstruct.t -> Cstruct.t
-  val get_ring_output_cons: Cstruct.t -> int32
-  val get_ring_output_prod: Cstruct.t -> int32
-  val set_ring_output_cons: Cstruct.t -> int32 -> unit
-  val set_ring_output_prod: Cstruct.t -> int32 -> unit
+  val get_ring_output_pos: Bytes.t -> int
+  val get_ring_output_length: Bytes.t -> int
+  val get_ring_output_cons: Bytes.t -> int32
+  val get_ring_output_prod: Bytes.t -> int32
+  val set_ring_output_cons: Bytes.t -> int32 -> unit
+  val set_ring_output_prod: Bytes.t -> int32 -> unit
 end
 
 module Reverse(RW: RW) = struct
-  let get_ring_input = RW.get_ring_output
+  let get_ring_input_pos = RW.get_ring_output_pos
+  let get_ring_input_length = RW.get_ring_output_length
   let get_ring_input_cons = RW.get_ring_output_cons
   let get_ring_input_prod = RW.get_ring_output_prod
   let set_ring_input_cons = RW.set_ring_output_cons
   let set_ring_input_prod = RW.set_ring_output_prod
 
-  let get_ring_output = RW.get_ring_input
+  let get_ring_output_pos = RW.get_ring_input_pos
+  let get_ring_output_length = RW.get_ring_input_length
   let get_ring_output_cons = RW.get_ring_input_cons
   let get_ring_output_prod = RW.get_ring_input_prod
   let set_ring_output_cons = RW.set_ring_input_cons
@@ -311,41 +307,40 @@ module Reverse(RW: RW) = struct
 end
 
 module type STREAM = sig
-  type stream = Cstruct.t
+  type stream = Bytes.t
   type position = int32
   val advance: stream -> position -> unit
 end
 
 module type READABLE = sig
   include STREAM
-  val read: stream -> (position * Cstruct.t)
+  val read: stream -> (position * int * int)
 end
 
 module type WRITABLE = sig
   include STREAM
-  val write: stream -> (position * Cstruct.t)
+  val write: stream -> (position * int * int)
 end
 
 module type S = sig
   module Reader: READABLE
   module Writer: WRITABLE
 
-  val write: Cstruct.t -> bytes -> int -> int -> int
-  val read: Cstruct.t -> bytes -> int -> int -> int
+  val write: Bytes.t -> bytes -> int -> int -> int
+  val read: Bytes.t -> bytes -> int -> int -> int
 
-  val unsafe_write: Cstruct.t -> bytes -> int -> int -> int
-  val unsafe_read: Cstruct.t -> bytes -> int -> int -> int
+  val unsafe_write: Bytes.t -> bytes -> int -> int -> int
+  val unsafe_read: Bytes.t -> bytes -> int -> int -> int
 end
 
 
 module Pipe(RW: RW) = struct
   module Writer = struct
-    type stream = Cstruct.t
+    type stream = Bytes.t
     type position = int32
 
     let write t =
-      let output = RW.get_ring_output t in
-      let output_length = length output in
+      let output_length = RW.get_ring_output_length t in
       (* Remember: the producer and consumer indices can be >> output_length *)
       let cons = Int32.to_int (RW.get_ring_output_cons t) in
       let prod = Int32.to_int (RW.get_ring_output_prod t) in
@@ -364,7 +359,7 @@ module Pipe(RW: RW) = struct
         if prod' >= cons'
         then output_length - prod' (* in this write, fill to the end *)
         else cons' - prod' in
-      Int32.of_int prod, Cstruct.sub output prod' free_space
+      Int32.of_int prod, prod', free_space
 
     let advance t prod' =
       memory_barrier ();
@@ -373,12 +368,11 @@ module Pipe(RW: RW) = struct
   end
 
   module Reader = struct
-    type stream = Cstruct.t
+    type stream = Bytes.t
     type position = int32
 
     let read t =
-      let input = RW.get_ring_input t in
-      let input_length = length input in
+      let input_length = RW.get_ring_input_length t in
       let cons = Int32.to_int (RW.get_ring_input_cons t) in
       let prod = Int32.to_int (RW.get_ring_input_prod t) in
       memory_barrier ();
@@ -395,7 +389,7 @@ module Pipe(RW: RW) = struct
         if prod' > cons'
         then prod' - cons'
         else input_length - cons' in (* read up to the last byte in the ring *)
-      Int32.of_int cons, Cstruct.sub input cons' data_available
+      Int32.of_int cons, cons', data_available
 
     let advance t (cons':int32) =
       let cons = RW.get_ring_input_cons t in
@@ -404,18 +398,16 @@ module Pipe(RW: RW) = struct
 
   (* Backwards compatible string interface: *)
   let read t buf ofs len =
-    let seq, frag = Reader.read t in
-    let data_available = Cstruct.length frag in
+    let seq, pos, data_available = Reader.read t in
     let can_read = min len data_available in
-    Cstruct.blit_to_bytes frag 0 buf ofs can_read;
+    Bytes.blit t (pos+RW.get_ring_input_pos t) buf ofs can_read;
     Reader.advance t Int32.(add seq (of_int can_read));
     can_read
 
   let write t buf ofs len =
-    let seq, frag = Writer.write t in
-    let free_space = Cstruct.length frag in
+    let seq, pos, free_space = Writer.write t in
     let can_write = min len free_space in
-    Cstruct.blit_from_bytes buf ofs frag 0 can_write;
+    Bytes.blit buf ofs t (pos+RW.get_ring_output_pos t) can_write;
     Writer.advance t Int32.(add seq (of_int can_write));
     can_write
 
@@ -435,14 +427,11 @@ module Pipe(RW: RW) = struct
 end
 
 module type Bidirectional_byte_stream = sig
-  val init: Cstruct.t -> unit
-  val to_debug_map: Cstruct.t -> (string * string) list
+  val init: Bytes.t -> unit
+  val to_debug_map: Bytes.t -> (string * string) list
 
   module Front : S
   module Back : S
 end
 
-let zero t =
-  for i = 0 to Cstruct.length t - 1 do
-    Cstruct.set_char t i '\000'
-  done
+let zero t = Bytes.fill t 0 (Bytes.length t) '\x00'
