@@ -17,20 +17,20 @@
 
 (** Shared ring handling to communicate with other Xen domains. *)
 
-type buf = Cstruct.t
+type buf = Io_page.t
 
 module Rpc : sig
 
   type sring
   (** Abstract type for a shared ring. *)
 
-  val of_buf : buf:Cstruct.t -> idx_size:int -> name:string -> sring
+  val of_buf : buf:Io_page.t -> idx_size:int -> name:string -> sring
   (** [of_buf ~buf ~idx_size ~name] is an [sring] constructed from
       [buf], of maximum request/response size [idx_size]. [name] is used for
-      pretty-printing. [buf] should be a Cstruct.t comprising pre-allocated
+      pretty-printing. [buf] should be a Io_page.t comprising pre-allocated
       contiguous I/O pages. *)
 
-  val of_buf_no_init : buf:Cstruct.t -> idx_size:int -> name:string -> sring
+  val of_buf_no_init : buf:Io_page.t -> idx_size:int -> name:string -> sring
   (** [of_buf_no_init] is like [of_buf], but does not initialise the ring.
       Use this if the other party has already initialised it. *)
 
@@ -50,9 +50,9 @@ module Rpc : sig
     (** [init ~sring] is an initialized frontend attached to shared ring
         [sring]. *)
 
-    val slot : ('a,'b) t -> int -> Cstruct.t
+    val slot : ('a,'b) t -> int -> Io_page.t
     (** [slot frontend idx] retrieves the request/response slot at [idx]
-        as an Cstruct.t. [idx] should be less than [nr_ents]. *)
+        as an Io_page.t. [idx] should be less than [nr_ents]. *)
 
     val nr_ents : ('a,'b) t -> int
     (** [nr_ents frontend] is the number of slots in the underlying
@@ -66,7 +66,7 @@ module Rpc : sig
     (** [next_req_id frontend] advances the ring request producer and
         returns the latest slot id. *)
 
-    val ack_responses : ('a,'b) t -> (Cstruct.t -> unit) -> unit
+    val ack_responses : ('a,'b) t -> (Io_page.t -> unit) -> unit
     (** [ack_response frontend f] reads all the outstanding responses
         from the remote domain, calling [f] on them, and updating the
         response consumer pointer after each individual slot has been
@@ -102,9 +102,9 @@ module Rpc : sig
     (** [init ~sring] is an initialized backend attached to shared ring
         [sring]. *)
 
-    val slot : ('a,'b) t -> int -> Cstruct.t
+    val slot : ('a,'b) t -> int -> Io_page.t
     (** [slot backend idx] retrieves the request/response slot at [idx]
-        as an Cstruct.t. [idx] should be less than [nr_ents]. *)
+        as an Io_page.t. [idx] should be less than [nr_ents]. *)
 
     val nr_ents : ('a,'b) t -> int
     (** [nr_ents backend] is the number of slots in the underlying
@@ -127,7 +127,7 @@ module Rpc : sig
         requests on the ring which we should immediately process without
         waiting for an event notification. *)
 
-    val ack_requests : ('a, 'b) t -> (Cstruct.t -> unit) -> unit
+    val ack_requests : ('a, 'b) t -> (Io_page.t -> unit) -> unit
     (** [ack_requests t fn] applies [fn slot] to each [slot] containing
         a new request. *)
 
@@ -140,24 +140,24 @@ end
 module type RW = sig
   (** A bi-directional pipe where 'input' and 'output' are from
       	    the frontend's (i.e. the guest's) point of view *)
-  val get_ring_input: Cstruct.t -> Cstruct.t
-  val get_ring_input_cons: Cstruct.t -> int32
-  val get_ring_input_prod: Cstruct.t -> int32
-  val set_ring_input_cons: Cstruct.t -> int32 -> unit
-  val set_ring_input_prod: Cstruct.t -> int32 -> unit
+  val get_ring_input: Io_page.t -> Io_page.t
+  val get_ring_input_cons: Io_page.t -> int32
+  val get_ring_input_prod: Io_page.t -> int32
+  val set_ring_input_cons: Io_page.t -> int32 -> unit
+  val set_ring_input_prod: Io_page.t -> int32 -> unit
 
-  val get_ring_output: Cstruct.t -> Cstruct.t
-  val get_ring_output_cons: Cstruct.t -> int32
-  val get_ring_output_prod: Cstruct.t -> int32
-  val set_ring_output_cons: Cstruct.t -> int32 -> unit
-  val set_ring_output_prod: Cstruct.t -> int32 -> unit
+  val get_ring_output: Io_page.t -> Io_page.t
+  val get_ring_output_cons: Io_page.t -> int32
+  val get_ring_output_prod: Io_page.t -> int32
+  val set_ring_output_cons: Io_page.t -> int32 -> unit
+  val set_ring_output_prod: Io_page.t -> int32 -> unit
 end
 
 module Reverse: functor(RW: RW) -> RW
 
 module type STREAM = sig
 
-  type stream = Cstruct.t
+  type stream = Io_page.t
 
   type position = int32
   (** A stream remains at a fixed position so that repeated calls to [read]
@@ -174,7 +174,7 @@ module type READABLE = sig
 
   include STREAM
 
-  val read: stream -> (position * Cstruct.t)
+  val read: stream -> (position * Io_page.t)
   (** [read stream] returns the data at the current stream position. Note this
       function does not advance the stream, so repeated calls should return
       the same data.
@@ -187,7 +187,7 @@ module type WRITABLE = sig
 
   include STREAM
 
-  val write: stream -> (position * Cstruct.t)
+  val write: stream -> (position * Io_page.t)
   (** [write stream item] returns writable buffers at the current position.
       This function does not advance the stream, so multiple calls will write
       at the same position. To advance the stream, call [advance position] *)
@@ -203,32 +203,32 @@ module type S = sig
      If you do need to reconnect or need to avoid copying, use the READER and
      WRITABLE signatures above *)
 
-  val write: Cstruct.t -> bytes -> int -> int -> int
+  val write: Io_page.t -> bytes -> int -> int -> int
   (** [write stream buf ofs len] writes up to [len] bytes from [buf] at [ofs]
       to [stream]. If this returns short it means EOF *)
 
-  val read: Cstruct.t -> bytes -> int -> int -> int
+  val read: Io_page.t -> bytes -> int -> int -> int
   (** [read stream buf ofs len] reads up to [len] bytes to [buf] at [ofs] from
       [stream]. If this returns short it means EOF *)
 
   (* These functions are deprecated (and nolonger unsafe, see #10) *)
-  val unsafe_write: Cstruct.t -> bytes -> int -> int -> int
-  val unsafe_read: Cstruct.t -> bytes -> int -> int -> int
+  val unsafe_write: Io_page.t -> bytes -> int -> int -> int
+  val unsafe_read: Io_page.t -> bytes -> int -> int -> int
 end
 
 module Pipe: functor(RW: RW) -> S
 
 module type Bidirectional_byte_stream = sig
-  val init: Cstruct.t -> unit
-  val to_debug_map: Cstruct.t -> (string * string) list
+  val init: Io_page.t -> unit
+  val to_debug_map: Io_page.t -> (string * string) list
 
   module Front : S
   module Back : S
 end
 
-val zero: Cstruct.t -> unit
-(** [zero c] sets every byte of the [c] Cstruct to zero. *)
+val zero: Io_page.t -> unit
+(** [zero c] sets every byte of the [c] Io_page to zero. *)
 
-val unsafe_load_uint32: Cstruct.t -> int -> int
+val unsafe_load_uint32: Io_page.t -> int -> int
 
-val unsafe_save_uint32: Cstruct.t -> int -> int -> unit
+val unsafe_save_uint32: Io_page.t -> int -> int -> unit

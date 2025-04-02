@@ -15,21 +15,21 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  *)
 
-type buf = Cstruct.t
+type buf = Io_page.t
 
-let sub t off len = Cstruct.sub t off len
+let sub t off len = Io_page.sub t off len
 
-let length t = Cstruct.length t
+let length t = Io_page.length t
 
 external memory_barrier: unit -> unit = "caml_memory_barrier" [@@noalloc]
 
 (* [load_uint32 c byte_offset] returns an int containing the 32-bit
    word found at [byte_offset] read with a single load instruction. *)
-external unsafe_load_uint32: Cstruct.t -> int -> int = "caml_cstruct_unsafe_load_uint32"
+external unsafe_load_uint32: Io_page.t -> int -> int = "caml_cstruct_unsafe_load_uint32"
 
 (* [save_uint32 c byte_offset newval] writes a 32-bit word at
    [byte_offset] using a single store instruction. *)
-external unsafe_save_uint32: Cstruct.t -> int -> int -> unit = "caml_cstruct_unsafe_save_uint32"
+external unsafe_save_uint32: Io_page.t -> int -> int -> unit = "caml_cstruct_unsafe_save_uint32"
 
 module Rpc = struct
 
@@ -67,7 +67,7 @@ module Rpc = struct
     unsafe_save_uint32 ring _rsp_event 1;
 
   type sring = {
-    buf: Cstruct.t;         (* Overall I/O buffer *)
+    buf: Io_page.t;         (* Overall I/O buffer *)
     header_size: int; (* Header of shared ring variables, in bits *)
     idx_size: int;    (* Size in bits of an index slot *)
     nr_ents: int;     (* Number of index entries *)
@@ -283,17 +283,17 @@ end
 module type RW = sig
   (** A bi-directional pipe where 'input' and 'output' are from
       	    the frontend's (i.e. the guest's) point of view *)
-  val get_ring_input: Cstruct.t -> Cstruct.t
-  val get_ring_input_cons: Cstruct.t -> int32
-  val get_ring_input_prod: Cstruct.t -> int32
-  val set_ring_input_cons: Cstruct.t -> int32 -> unit
-  val set_ring_input_prod: Cstruct.t -> int32 -> unit
+  val get_ring_input: Io_page.t -> Io_page.t
+  val get_ring_input_cons: Io_page.t -> int32
+  val get_ring_input_prod: Io_page.t -> int32
+  val set_ring_input_cons: Io_page.t -> int32 -> unit
+  val set_ring_input_prod: Io_page.t -> int32 -> unit
 
-  val get_ring_output: Cstruct.t -> Cstruct.t
-  val get_ring_output_cons: Cstruct.t -> int32
-  val get_ring_output_prod: Cstruct.t -> int32
-  val set_ring_output_cons: Cstruct.t -> int32 -> unit
-  val set_ring_output_prod: Cstruct.t -> int32 -> unit
+  val get_ring_output: Io_page.t -> Io_page.t
+  val get_ring_output_cons: Io_page.t -> int32
+  val get_ring_output_prod: Io_page.t -> int32
+  val set_ring_output_cons: Io_page.t -> int32 -> unit
+  val set_ring_output_prod: Io_page.t -> int32 -> unit
 end
 
 module Reverse(RW: RW) = struct
@@ -311,36 +311,36 @@ module Reverse(RW: RW) = struct
 end
 
 module type STREAM = sig
-  type stream = Cstruct.t
+  type stream = Io_page.t
   type position = int32
   val advance: stream -> position -> unit
 end
 
 module type READABLE = sig
   include STREAM
-  val read: stream -> (position * Cstruct.t)
+  val read: stream -> (position * Io_page.t)
 end
 
 module type WRITABLE = sig
   include STREAM
-  val write: stream -> (position * Cstruct.t)
+  val write: stream -> (position * Io_page.t)
 end
 
 module type S = sig
   module Reader: READABLE
   module Writer: WRITABLE
 
-  val write: Cstruct.t -> bytes -> int -> int -> int
-  val read: Cstruct.t -> bytes -> int -> int -> int
+  val write: Io_page.t -> bytes -> int -> int -> int
+  val read: Io_page.t -> bytes -> int -> int -> int
 
-  val unsafe_write: Cstruct.t -> bytes -> int -> int -> int
-  val unsafe_read: Cstruct.t -> bytes -> int -> int -> int
+  val unsafe_write: Io_page.t -> bytes -> int -> int -> int
+  val unsafe_read: Io_page.t -> bytes -> int -> int -> int
 end
 
 
 module Pipe(RW: RW) = struct
   module Writer = struct
-    type stream = Cstruct.t
+    type stream = Io_page.t
     type position = int32
 
     let write t =
@@ -364,7 +364,7 @@ module Pipe(RW: RW) = struct
         if prod' >= cons'
         then output_length - prod' (* in this write, fill to the end *)
         else cons' - prod' in
-      Int32.of_int prod, Cstruct.sub output prod' free_space
+      Int32.of_int prod, Io_page.sub output prod' free_space
 
     let advance t prod' =
       memory_barrier ();
@@ -373,7 +373,7 @@ module Pipe(RW: RW) = struct
   end
 
   module Reader = struct
-    type stream = Cstruct.t
+    type stream = Io_page.t
     type position = int32
 
     let read t =
@@ -395,7 +395,7 @@ module Pipe(RW: RW) = struct
         if prod' > cons'
         then prod' - cons'
         else input_length - cons' in (* read up to the last byte in the ring *)
-      Int32.of_int cons, Cstruct.sub input cons' data_available
+      Int32.of_int cons, Io_page.sub input cons' data_available
 
     let advance t (cons':int32) =
       let cons = RW.get_ring_input_cons t in
@@ -405,17 +405,17 @@ module Pipe(RW: RW) = struct
   (* Backwards compatible string interface: *)
   let read t buf ofs len =
     let seq, frag = Reader.read t in
-    let data_available = Cstruct.length frag in
+    let data_available = Io_page.length frag in
     let can_read = min len data_available in
-    Cstruct.blit_to_bytes frag 0 buf ofs can_read;
+    Io_page.blit_to_bytes frag 0 buf ofs can_read;
     Reader.advance t Int32.(add seq (of_int can_read));
     can_read
 
   let write t buf ofs len =
     let seq, frag = Writer.write t in
-    let free_space = Cstruct.length frag in
+    let free_space = Io_page.length frag in
     let can_write = min len free_space in
-    Cstruct.blit_from_bytes buf ofs frag 0 can_write;
+    Io_page.string_blit (Bytes.unsafe_to_string buf) ofs frag 0 can_write;
     Writer.advance t Int32.(add seq (of_int can_write));
     can_write
 
@@ -435,14 +435,14 @@ module Pipe(RW: RW) = struct
 end
 
 module type Bidirectional_byte_stream = sig
-  val init: Cstruct.t -> unit
-  val to_debug_map: Cstruct.t -> (string * string) list
+  val init: Io_page.t -> unit
+  val to_debug_map: Io_page.t -> (string * string) list
 
   module Front : S
   module Back : S
 end
 
 let zero t =
-  for i = 0 to Cstruct.length t - 1 do
-    Cstruct.set_char t i '\000'
+  for i = 0 to Io_page.length t - 1 do
+    Io_page.set_uint8 t i 0
   done

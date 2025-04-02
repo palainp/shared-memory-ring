@@ -21,8 +21,8 @@ module Ring = struct
 	module Layout = struct
 		(* memory layout from the frontend's point of view *)
                 (* type ring = {
-			input: Cstruct.t [@len 1024];
-			output: Cstruct.t [@len 2048];
+			input: Io_page.t [@len 1024];
+			output: Io_page.t [@len 2048];
 			(* (* unsafe to use these because they use multi-byte load/stors *)
 			input_cons: uint32_t;
 			input_prod: uint32_t;
@@ -30,8 +30,8 @@ module Ring = struct
 			output_prod: uint32_t;
 			*)
 		   } *)
-                let get_ring_input c = Cstruct.sub c 0 1024
-                let get_ring_output c = Cstruct.sub c 1024 2048
+                let get_ring_input c = Io_page.sub c 0 1024
+                let get_ring_output c = Io_page.sub c 1024 2048
 		let _input_cons  = 3072
                 let _input_prod  = _input_cons + 4
                 let _output_cons = _input_prod + 4

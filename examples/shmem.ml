@@ -18,7 +18,6 @@ open Lwt
 module type IO_PAGE = sig
   type t
 
-  val to_cstruct : t -> (char, Bigarray.int8_unsigned_elt, Bigarray.c_layout) Bigarray.Array1.t
   val get_order : int -> t
   val to_pages : t -> t list
 end
@@ -41,8 +40,6 @@ module Io_page = struct
     buf: (char, Bigarray.int8_unsigned_elt, Bigarray.c_layout) Bigarray.Array1.t;
     file: file;
   }
-
-  let to_cstruct t = t.buf
 
   let page_size = 4096
 

@@ -16,12 +16,12 @@
 
 let ( |> ) a b = b a
 let id x = x
-let alloc_page () = Bigarray.Array1.create Bigarray.char Bigarray.c_layout 4096
+let alloc_page () = Io_page.get ~n:1 ()
 
 let one_request_response () =
   let page = alloc_page () in
   let sring =
-    Ring.Rpc.of_buf ~buf:(Cstruct.of_bigarray page) ~idx_size:1 ~name:"test"
+    Ring.Rpc.of_buf ~buf:page ~idx_size:1 ~name:"test"
   in
   let front = Ring.Rpc.Front.init ~sring in
   let back = Ring.Rpc.Back.init ~sring in

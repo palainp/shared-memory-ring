@@ -32,8 +32,8 @@ module Ring = struct
 			*)
 		} [@@little_endian]
                 *)
-                let get_ring_output c = Cstruct.sub c 0 1024
-                let get_ring_input c = Cstruct.sub c 1024 1024
+                let get_ring_output c = Io_page.sub c 0 1024
+                let get_ring_input c = Io_page.sub c 1024 1024
 		let _output_cons = 2048
 		let _output_prod = _output_cons + 4
 		let _input_cons  = _output_prod + 4
