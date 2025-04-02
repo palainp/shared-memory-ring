@@ -19,10 +19,9 @@ open OUnit
 let ( |> ) a b = b a
 let id x = x
 
-let alloc_page () =
-	Bigarray.Array1.create Bigarray.char Bigarray.c_layout 4096
+let alloc_page () = Io_page.get ~n:1 ()
 
-let length t = Cstruct.length t
+let length t = Io_page.length t
 
 let compare_bufs a b =
 	assert_equal ~printer:string_of_int (Bigarray.Array1.dim a) (Bigarray.Array1.dim b);
@@ -40,9 +39,10 @@ let bigarray_to_string a =
 	s
 
 let with_xenstores f =
-	let b1 = alloc_page () in
-	let b2 = alloc_page () in
-	let a = Cstruct.of_bigarray b1 in
+	let a = alloc_page () in
+	let b1 = a.buffer in
+	let t = alloc_page () in (* This is hacky as now Io_page provides the buffer, and Old_ring still uses Cstruct*)
+	let b2 = t.buffer in
 	let b = Old_ring.C_Xenstore.of_buf b2 in
 	Xenstore_ring.Ring.init a;
 	Old_ring.C_Xenstore.zero b;
@@ -108,8 +108,8 @@ let check_signed_unsigned_write () =
 		(fun b1 b2 a b ->
 			set_ring_output_cons a ofs;
 			set_ring_output_prod a ofs;
-			set_ring_output_cons (Cstruct.of_bigarray b2) ofs;
-			set_ring_output_prod (Cstruct.of_bigarray b2) ofs;
+			set_ring_output_cons (Io_page.of_bigarray b2) ofs;
+			set_ring_output_prod (Io_page.of_bigarray b2) ofs;
 			let x = Xenstore_ring.Ring.Front.unsafe_write a msg' 0 (Bytes.length msg') in
 			let y = Old_ring.C_Xenstore.unsafe_write b msg (String.length msg) in
 			assert_equal ~printer:string_of_int x y;
@@ -124,8 +124,8 @@ let check_signed_unsigned_read () =
 		(fun b1 b2 a b ->
 			set_ring_output_cons a (Int32.(pred (pred max_int)));
 			set_ring_output_prod a (Int32.(succ (succ max_int)));
-			set_ring_output_cons (Cstruct.of_bigarray b2) (Int32.(pred (pred max_int)));
- 			set_ring_output_prod (Cstruct.of_bigarray b2) (Int32.(succ (succ max_int)));
+			set_ring_output_cons (Io_page.of_bigarray b2) (Int32.(pred (pred max_int)));
+			set_ring_output_prod (Io_page.of_bigarray b2) (Int32.(succ (succ max_int)));
 			let x' = Xenstore_ring.Ring.Back.unsafe_read a buf' 0 (Bytes.length buf') in
 			let y' = Old_ring.C_Xenstore.Back.unsafe_read b buf (Bytes.length buf) in
 			assert_equal ~printer:string_of_int x' y';
@@ -133,9 +133,10 @@ let check_signed_unsigned_read () =
 		)
 
 let with_consoles f =
-	let b1 = alloc_page () in
-	let b2 = alloc_page () in
-	let a = Cstruct.of_bigarray b1 in
+	let a = alloc_page () in
+	let b1 = a.buffer in
+	let t = alloc_page () in (* This is hacky as now Io_page provides the buffer, and Old_ring still uses Cstruct*)
+	let b2 = t.buffer in
 	let b = Old_ring.C_Console.of_buf b2 in
 	Console_ring.Ring.init a;
 	Old_ring.C_Console.zero b;
@@ -168,6 +169,8 @@ let console_hello () =
 		)
 
 let block' =
+	(* Here we can use Cstruct as that block will not be used as a Io_page, so there is no
+	   alignment constraint. *)
 	let buf = Bigarray.Array1.create Bigarray.char Bigarray.c_layout (15 * 1024 * 1024) in
 	let counter = ref 0l in
 	let c = Cstruct.of_bigarray buf in
@@ -247,7 +250,7 @@ let _ =
 		"xenstore_init" >:: xenstore_init;
 		"check_signed_unsigned_read" >:: check_signed_unsigned_read;
 		"check_signed_unsigned_write" >:: check_signed_unsigned_write;
-                "xenstore_hello" >:: xenstore_hello;
+        "xenstore_hello" >:: xenstore_hello;
 		"console_init" >:: console_init;
 		"console_hello" >:: console_hello;
 		"ocaml throughput_test1" >:: throughput_test ~use_ocaml:true ~read_chunk_size:1024 ~write_chunk_size:1024 ~verify:false;
