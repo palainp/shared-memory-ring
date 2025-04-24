@@ -31,7 +31,7 @@ caml_memory_barrier()
   return Val_unit;
 }
 
-CAMLprim value caml_cstruct_unsafe_load_uint32(value vc, value vofs) {
+CAMLprim value caml_iopage_unsafe_load_uint32(value vc, value vofs) {
   CAMLparam2(vc, vofs);
   CAMLlocal2(vb, vbofs);
   vb = Field(vc, 0);
@@ -43,7 +43,7 @@ CAMLprim value caml_cstruct_unsafe_load_uint32(value vc, value vofs) {
   CAMLreturn (Val_int(data[ofs / sizeof(uint32_t)]));
 }
 
-CAMLprim value caml_cstruct_unsafe_save_uint32(value vc, value vofs, value x) {
+CAMLprim value caml_iopage_unsafe_save_uint32(value vc, value vofs, value x) {
   CAMLparam3(vc, vofs, x);
   CAMLlocal2(vb, vbofs);
   vb = Field(vc, 0);

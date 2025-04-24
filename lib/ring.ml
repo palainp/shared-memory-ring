@@ -25,11 +25,11 @@ external memory_barrier: unit -> unit = "caml_memory_barrier" [@@noalloc]
 
 (* [load_uint32 c byte_offset] returns an int containing the 32-bit
    word found at [byte_offset] read with a single load instruction. *)
-external unsafe_load_uint32: Io_page.t -> int -> int = "caml_cstruct_unsafe_load_uint32"
+external unsafe_load_uint32: Io_page.t -> int -> int = "caml_iopage_unsafe_load_uint32"
 
 (* [save_uint32 c byte_offset newval] writes a 32-bit word at
    [byte_offset] using a single store instruction. *)
-external unsafe_save_uint32: Io_page.t -> int -> int -> unit = "caml_cstruct_unsafe_save_uint32"
+external unsafe_save_uint32: Io_page.t -> int -> int -> unit = "caml_iopage_unsafe_save_uint32"
 
 module Rpc = struct
 
@@ -42,7 +42,6 @@ module Rpc = struct
   };
 *)
   (* (* It's unsafe to use these since they use multi-byte load/stores *)
-     [%%cstruct
      type ring_hdr = {
        req_prod: uint32_t;
        req_event: uint32_t;
@@ -50,7 +49,6 @@ module Rpc = struct
        rsp_event: uint32_t;
        stuff: uint64_t;
      } [@@little_endian]
-     ]
   *)
 
   (* offsets in the header: *)
