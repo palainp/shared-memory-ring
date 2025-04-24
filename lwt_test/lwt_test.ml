@@ -20,7 +20,7 @@ open OUnit
 let ( |> ) a b = b a
 let id x = x
 
-let alloc_page () = Io_page.get ~n:1 ()
+let alloc_page () = Io_page.get 1
 
 let one_request_response () =
   let page = alloc_page () in
