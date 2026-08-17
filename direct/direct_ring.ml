@@ -22,6 +22,10 @@ module Front = struct
   type ('a, 'b) t = {
     ring : ('a, 'b) Ring.Rpc.Front.t;
     waiting : ('b, 'a outcome -> unit) Hashtbl.t;
+    (* Ids whose reply the peer follows with slots it never writes, one per
+       extra descriptor the request carried. *)
+    extras : ('b, int) Hashtbl.t;
+    mutable skip : int; (* response slots still to step over *)
     mutable on_free : unit -> unit;
     mutable closed : bool;
     mutable unmatched : int;
@@ -31,6 +35,8 @@ module Front = struct
     {
       ring;
       waiting = Hashtbl.create 64;
+      extras = Hashtbl.create 8;
+      skip = 0;
       on_free = ignore;
       closed = false;
       unmatched = 0;
@@ -45,11 +51,14 @@ module Front = struct
 
   let slot t = Ring.Rpc.Front.slot t.ring (Ring.Rpc.Front.next_req_id t.ring)
 
-  let write t ~on_reply req_fn =
+  let write t ?(extras = []) ~on_reply req_fn =
     if t.closed then invalid_arg "Direct_ring.Front.write: ring is shut down";
-    if free_requests t < 1 then raise Ring_full;
+    let n = List.length extras in
+    if free_requests t < n + 1 then raise Ring_full;
     let id = req_fn (slot t) in
-    Hashtbl.replace t.waiting id on_reply
+    List.iter (fun fill -> fill (slot t)) extras;
+    Hashtbl.replace t.waiting id on_reply;
+    if n > 0 then Hashtbl.replace t.extras id n
 
   let push t notify_fn =
     if Ring.Rpc.Front.push_requests_and_check_notify t.ring then notify_fn ()
@@ -58,12 +67,21 @@ module Front = struct
     let freed = ref false in
     Ring.Rpc.Front.ack_responses t.ring (fun slot ->
         freed := true;
-        let id, response = resp_fn slot in
-        match Hashtbl.find_opt t.waiting id with
-        | Some fn ->
-            Hashtbl.remove t.waiting id;
-            fn (Reply response)
-        | None -> t.unmatched <- t.unmatched + 1);
+        if t.skip > 0 then t.skip <- t.skip - 1
+        else
+          let id, response = resp_fn slot in
+          (* Read the extras before running the callback: it may write the next
+             request and put the same id back in the table. *)
+          (match Hashtbl.find_opt t.extras id with
+          | Some n ->
+              Hashtbl.remove t.extras id;
+              t.skip <- n
+          | None -> ());
+          match Hashtbl.find_opt t.waiting id with
+          | Some fn ->
+              Hashtbl.remove t.waiting id;
+              fn (Reply response)
+          | None -> t.unmatched <- t.unmatched + 1);
     if !freed then t.on_free ()
 
   let shutdown t =
@@ -71,5 +89,7 @@ module Front = struct
     (* Snapshot first: a callback is entitled to touch the table. *)
     let pending = Hashtbl.fold (fun _ fn acc -> fn :: acc) t.waiting [] in
     Hashtbl.reset t.waiting;
+    Hashtbl.reset t.extras;
+    t.skip <- 0;
     List.iter (fun fn -> fn Shutdown) pending
 end

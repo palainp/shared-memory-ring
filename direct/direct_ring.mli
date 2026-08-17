@@ -51,16 +51,27 @@ module Front : sig
       request is counted by {!unmatched} rather than printed. *)
 
   val write :
-    ('a, 'b) t -> on_reply:('a outcome -> unit) -> (buf -> 'b) -> unit
-  (** [write ring ~on_reply req_fn] claims a slot and calls [req_fn] on it,
-      which marshals the request and returns its id. [on_reply] runs when the
-      response carrying that id arrives, or when {!shutdown} is called,
-      whichever comes first, and never twice.
+    ('a, 'b) t ->
+    ?extras:(buf -> unit) list ->
+    on_reply:('a outcome -> unit) ->
+    (buf -> 'b) ->
+    unit
+  (** [write ring ~extras ~on_reply req_fn] claims [1 + length extras] slots,
+      calls [req_fn] on the first, which marshals the request and returns its
+      id, then each function of [extras] on the slots that follow. [on_reply]
+      runs when the response carrying that id arrives, or when {!shutdown} is
+      called, whichever comes first, and never twice.
+
+      An extra descriptor is consumed by the peer but not answered: it advances
+      the response producer past that slot without writing to it. {!poll} steps
+      over it rather than reading whatever the slot last held. This is what the
+      netif GSO descriptors need, and what a waker table keyed on ids alone
+      cannot express.
 
       Nothing reaches the peer until {!push}.
 
-      @raise Ring_full if the ring has no free slot. *)
-
+      @raise Ring_full if the ring has no room for the request and its extras. *)
+      
   val push : ('a, 'b) t -> (unit -> unit) -> unit
   (** [push ring notify_fn] advances [ring] pointers, exposing the written
       requests to the other end. If the other end won't see the update,
@@ -77,7 +88,8 @@ module Front : sig
       instance, gets it back this way. *)
 
   val free_requests : ('a, 'b) t -> int
-  (** How many more requests may be written. *)
+  (** How many more requests may be written. An extra descriptor takes a slot
+      of its own, so a request with one extra needs two. *)
 
   val nr_ents : ('a, 'b) t -> int
   (** The size of the ring, and so the most requests that can ever be

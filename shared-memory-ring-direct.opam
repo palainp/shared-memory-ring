@@ -21,5 +21,7 @@ synopsis: "Direct-style interface to shared memory rings"
 description: """
 The same job as shared-memory-ring-lwt, with a callback per request in place of
 its promise, so that nothing here blocks and nothing here needs a scheduler.
+Also steps over the response slot an extra descriptor consumes, which a waker
+table keyed on request ids alone cannot express.
 """
 x-maintenance-intent: [ "(latest)" ]

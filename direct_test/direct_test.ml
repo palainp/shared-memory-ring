@@ -62,6 +62,50 @@ let one_request_response () =
   assert_equal ~msg:"outstanding" ~printer:string_of_int 0
     (Direct_ring.Front.outstanding client)
 
+(* An extra descriptor is consumed by the peer but not answered: it advances the
+   response producer past that slot without writing to it. Poison the slot it
+   will step over, so that reading it as a reply would name a request nobody
+   made. *)
+let extra_descriptor () =
+  let page = alloc_page () in
+  let buf = Cstruct.of_bigarray page in
+  let sring = Ring.Rpc.of_buf ~buf ~idx_size:16 ~name:"test" in
+  let front = Ring.Rpc.Front.init ~sring in
+  let back = Ring.Rpc.Back.init ~sring in
+  let client = Direct_ring.Front.init front in
+
+  Cstruct.set_uint8 (Ring.Rpc.Front.slot front 1) 0 99;
+
+  let replied = ref 0 in
+  Direct_ring.Front.write client
+    ~extras:[ (fun slot -> Cstruct.set_uint8 slot 0 200) ]
+    ~on_reply:(function
+      | Direct_ring.Front.Reply () -> incr replied
+      | Direct_ring.Front.Shutdown -> ())
+    (fun slot ->
+      Cstruct.set_uint8 slot 0 8;
+      8);
+  Direct_ring.Front.push client ignore;
+  assert_equal ~msg:"two slots taken" ~printer:string_of_int
+    (Ring.Rpc.Front.nr_ents front - 2)
+    (Direct_ring.Front.free_requests client);
+
+  (* The peer: read both slots, answer the request once, step over one
+     response slot without writing it. *)
+  Ring.Rpc.Back.ack_requests back (fun _ -> ());
+  Cstruct.set_uint8 (Ring.Rpc.Back.slot back (Ring.Rpc.Back.next_res_id back)) 0 8;
+  ignore (Ring.Rpc.Back.next_res_id back);
+  ignore (Ring.Rpc.Back.push_responses_and_check_notify back);
+
+  Direct_ring.Front.poll client (fun slot -> (Cstruct.get_uint8 slot 0, ()));
+  assert_equal ~msg:"the reply came back" ~printer:string_of_int 1 !replied;
+  assert_equal ~msg:"the poisoned slot was stepped over" ~printer:string_of_int 0
+    (Direct_ring.Front.unmatched client);
+  assert_equal ~msg:"both slots are free again" ~printer:string_of_int
+    (Ring.Rpc.Front.nr_ents front)
+    (Direct_ring.Front.free_requests client)
+
+
 (* Shutdown hands every outstanding request back to whoever wrote it, the way
    Lwt_ring.Front.shutdown rejects every pending promise. *)
 let shutdown_hands_requests_back () =
@@ -92,6 +136,7 @@ let _ =
     "direct"
     >::: [
            "one_request_response" >:: one_request_response;
+           "extra_descriptor" >:: extra_descriptor;
            "shutdown_hands_requests_back" >:: shutdown_hands_requests_back;
          ]
   in
