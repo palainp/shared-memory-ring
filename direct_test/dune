@@ -1,0 +1,4 @@
+(test
+ (name direct_test)
+ (libraries shared-memory-ring shared-memory-ring-direct cstruct ounit2)
+ (package shared-memory-ring-direct))

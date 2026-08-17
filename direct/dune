@@ -1,0 +1,5 @@
+(library
+ (name direct_shared_memory_ring)
+ (public_name shared-memory-ring-direct)
+ (libraries shared-memory-ring)
+ (wrapped false))
