@@ -1,0 +1,26 @@
+opam-version: "2.0"
+maintainer:   "piertre.alain@tuta.io"
+authors:      [ "Pierre Alain" ]
+license:      "ISC"
+homepage:     "https://github.com/mirage/shared-memory-ring"
+bug-reports:  "https://github.com/mirage/shared-memory-ring/issues"
+dev-repo:     "git+https://github.com/mirage/shared-memory-ring.git"
+doc:          "https://mirage.github.io/shared-memory-ring/"
+
+build: [
+  ["dune" "build" "-p" name "-j" jobs]
+  ["dune" "runtest" "-p" name "-j" jobs] {with-test}
+]
+
+depends: [
+  "ocaml" {>= "5.0.0"}
+  "dune" {>= "1.0"}
+  "shared-memory-ring-direct" {= version}
+  "miou"
+]
+synopsis: "Waiting on a full shared memory ring, under miou"
+description: """
+The one operation shared-memory-ring-direct leaves to its caller: blocking
+until a full ring has room again. A few lines over a miou mutex and condition.
+"""
+x-maintenance-intent: [ "(latest)" ]

@@ -1,0 +1,5 @@
+(library
+ (name miou_shared_memory_ring)
+ (public_name shared-memory-ring-direct-miou)
+ (libraries shared-memory-ring-direct miou)
+ (wrapped false))
